@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Lost & Found QR App</title>
+  <title>Lost & Found QR App — Login / Register</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -13,19 +14,24 @@
     h1 {
       color: #2c3e50;
     }
-    form {
+    .card {
       background: white;
       padding: 20px;
       border-radius: 10px;
       display: inline-block;
       box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      min-width: 320px;
+      max-width: 420px;
+      width: 100%;
     }
-    input {
-      margin: 10px;
+    input, textarea {
+      margin: 10px 0;
       padding: 8px;
       width: 80%;
       border: 1px solid #ccc;
       border-radius: 5px;
+      box-sizing: border-box;
+      font-size: 14px;
     }
     button {
       padding: 10px 20px;
@@ -34,38 +40,283 @@
       border: none;
       border-radius: 5px;
       cursor: pointer;
+      font-weight: 600;
     }
-    #qrcode {
-      margin-top: 20px;
+    .smallLink {
+      display:block;
+      margin-top:12px;
+      color:#3498db;
+      text-decoration:none;
+      font-size:13px;
+      cursor:pointer;
     }
+    .hidden { display: none; }
+    #qrcode { margin-top: 20px; }
+    .msg { font-size: 13px; color: #e11; margin-top: 8px; }
+    .success { color: #0a7; }
+    .top-row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .btn-ghost { background: transparent; color:#3498db; border:1px solid #dbeafe; padding:8px 12px; border-radius:6px; cursor:pointer; }
   </style>
 </head>
 <body>
   <h1>Lost & Found QR App</h1>
-  <form id="userForm">
-    <input type="text" id="name" placeholder="Enter your name" required><br>
-    <input type="email" id="email" placeholder="Enter your email" required><br>
-    <input type="text" id="phone" placeholder="Enter your phone"><br>
-    <button type="submit">Generate QR Code</button>
-  </form>
-  
-  <div id="qrcode"></div>
 
+  <!-- LOGIN CARD -->
+  <div class="card" id="loginCard">
+    <h2 style="margin-top:0">Login</h2>
+    <form id="loginForm">
+      <input type="email" id="loginEmail" placeholder="Email" required><br>
+      <input type="password" id="loginPassword" placeholder="Password" required><br>
+      <button type="submit">Login</button>
+    </form>
+    <a class="smallLink" id="showRegister">Don't have an account? Register</a>
+    <p class="msg" id="loginMsg"></p>
+  </div>
+
+  <!-- REGISTER CARD -->
+  <div class="card hidden" id="registerCard">
+    <h2 style="margin-top:0">Register</h2>
+    <form id="registerForm">
+      <input type="text" id="regName" placeholder="Full name" required><br>
+      <input type="email" id="regEmail" placeholder="Email" required><br>
+      <input type="text" id="regPhone" placeholder="Phone (optional)"><br>
+      <input type="password" id="regPassword" placeholder="Password (min 6 chars)" required><br>
+      <input type="password" id="regConfirm" placeholder="Confirm password" required><br>
+      <button type="submit">Register</button>
+    </form>
+    <a class="smallLink" id="showLogin">Already have an account? Login</a>
+    <p class="msg" id="regMsg"></p>
+  </div>
+
+  <!-- MAIN / QR CARD (shown after login) -->
+  <div class="card hidden" id="mainCard">
+    <div class="top-row">
+      <h2 style="margin:0">Generate QR</h2>
+      <div>
+        <span id="welcomeText" style="font-size:13px;color:#374151;margin-right:8px"></span>
+        <button class="btn-ghost" id="logoutBtn">Logout</button>
+      </div>
+    </div>
+
+    <form id="userForm">
+      <input type="text" id="name" placeholder="Enter your name" required><br>
+      <input type="email" id="email" placeholder="Enter your email" required><br>
+      <input type="text" id="phone" placeholder="Enter your phone"><br>
+      <button type="submit">Generate QR Code</button>
+    </form>
+
+    <div id="qrcode"></div>
+    <p class="msg success" id="mainMsg"></p>
+  </div>
+
+  <!-- QR library -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
   <script>
+    // ---------- Helpers: localStorage users + password hashing ----------
+    const USERS_KEY = 'lf_users_v1';        // stored users map by email
+    const SESSION_KEY = 'lf_session_email'; // email of logged in user (sessionStorage used below)
+
+    function loadUsers() {
+      try {
+        return JSON.parse(localStorage.getItem(USERS_KEY) || '{}');
+      } catch(e) { return {}; }
+    }
+    function saveUsers(users) {
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    }
+
+    // Hash password using Web Crypto API (SHA-256)
+    async function hashPassword(password) {
+      const enc = new TextEncoder();
+      const data = enc.encode(password);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      // convert ArrayBuffer to hex string
+      const bytes = new Uint8Array(hashBuffer);
+      return Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+
+    // ---------- UI helpers ----------
+    const loginCard = document.getElementById('loginCard');
+    const registerCard = document.getElementById('registerCard');
+    const mainCard = document.getElementById('mainCard');
+    const loginMsg = document.getElementById('loginMsg');
+    const regMsg = document.getElementById('regMsg');
+    const mainMsg = document.getElementById('mainMsg');
+    const welcomeText = document.getElementById('welcomeText');
+
+    function showView(view) {
+      // view = 'login' | 'register' | 'main'
+      loginCard.classList.toggle('hidden', view !== 'login');
+      registerCard.classList.toggle('hidden', view !== 'register');
+      mainCard.classList.toggle('hidden', view !== 'main');
+      loginMsg.textContent = '';
+      regMsg.textContent = '';
+      mainMsg.textContent = '';
+    }
+
+    // ---------- Register ----------
+    document.getElementById('showRegister').addEventListener('click', () => showView('register'));
+    document.getElementById('showLogin').addEventListener('click', () => showView('login'));
+
+    document.getElementById('registerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      regMsg.style.color = '#e11';
+      const name = document.getElementById('regName').value.trim();
+      const email = document.getElementById('regEmail').value.trim().toLowerCase();
+      const phone = document.getElementById('regPhone').value.trim();
+      const pw = document.getElementById('regPassword').value;
+      const confirm = document.getElementById('regConfirm').value;
+
+      if (!name || !email || !pw || !confirm) {
+        regMsg.textContent = 'Please fill in all required fields.';
+        return;
+      }
+      if (pw.length < 6) {
+        regMsg.textContent = 'Password should be at least 6 characters.';
+        return;
+      }
+      if (pw !== confirm) {
+        regMsg.textContent = "Passwords don't match.";
+        return;
+      }
+
+      const users = loadUsers();
+      if (users[email]) {
+        regMsg.textContent = 'An account with this email already exists. Try logging in.';
+        return;
+      }
+
+      try {
+        const pwHash = await hashPassword(pw);
+        users[email] = { name, email, phone, pwHash, createdAt: Date.now() };
+        saveUsers(users);
+        regMsg.style.color = '#0a7';
+        regMsg.textContent = 'Registration successful! You can now login.';
+        // clear inputs
+        document.getElementById('registerForm').reset();
+        // auto-switch to login after short delay
+        setTimeout(() => showView('login'), 900);
+      } catch (err) {
+        console.error(err);
+        regMsg.textContent = 'Error registering. Please try again.';
+      }
+    });
+
+    // ---------- Login ----------
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loginMsg.style.color = '#e11';
+      const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+      const pw = document.getElementById('loginPassword').value;
+      if (!email || !pw) {
+        loginMsg.textContent = 'Please fill email and password.';
+        return;
+      }
+      const users = loadUsers();
+      const user = users[email];
+      if (!user) {
+        loginMsg.textContent = 'Account not found. Please register first.';
+        return;
+      }
+      try {
+        const pwHash = await hashPassword(pw);
+        if (pwHash !== user.pwHash) {
+          loginMsg.textContent = 'Incorrect password.';
+          return;
+        }
+        // success: create session
+        sessionStorage.setItem(SESSION_KEY, email);
+        loginMsg.style.color = '#0a7';
+        loginMsg.textContent = 'Login successful!';
+        // show main view after short delay
+        setTimeout(() => {
+          showMainForUser(user);
+        }, 400);
+      } catch (err) {
+        console.error(err);
+        loginMsg.textContent = 'Login error. Try again.';
+      }
+    });
+
+    // ---------- Session / Main ----------
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      sessionStorage.removeItem(SESSION_KEY);
+      showView('login');
+    });
+
+    function showMainForUser(user) {
+      // Fill qr form with user info
+      document.getElementById('name').value = user.name || '';
+      document.getElementById('email').value = user.email || '';
+      document.getElementById('phone').value = user.phone || '';
+      welcomeText.textContent = `Hello, ${user.name.split(' ')[0] || user.email}`;
+      showView('main');
+      document.getElementById('userForm').scrollIntoView({behavior:'smooth'});
+    }
+
+    // If session exists, auto login
+    window.addEventListener('load', () => {
+      const email = sessionStorage.getItem(SESSION_KEY);
+      if (email) {
+        const users = loadUsers();
+        const user = users[email];
+        if (user) {
+          showMainForUser(user);
+          return;
+        } else {
+          sessionStorage.removeItem(SESSION_KEY);
+        }
+      }
+      showView('login');
+    });
+
+    // ---------- QR generation (same logic as your original) ----------
     document.getElementById("userForm").addEventListener("submit", function(event) {
       event.preventDefault();
-      
-      let name = document.getElementById("name").value;
-      let email = document.getElementById("email").value;
-      let phone = document.getElementById("phone").value;
-      
+      mainMsg.textContent = '';
+      let name = document.getElementById("name").value.trim();
+      let email = document.getElementById("email").value.trim();
+      let phone = document.getElementById("phone").value.trim();
+
+      if (!name || !email) {
+        mainMsg.style.color = '#e11';
+        mainMsg.textContent = 'Name and email are required for the QR content.';
+        return;
+      }
+
       let userData = `Name: ${name}\nEmail: ${email}\nPhone: ${phone}`;
-      
+
       document.getElementById("qrcode").innerHTML = "";
-      QRCode.toCanvas(document.createElement("canvas"), userData, function (error, canvas) {
-        if (error) console.error(error);
+      // create canvas, generate QR, then append
+      const canvas = document.createElement('canvas');
+      QRCode.toCanvas(canvas, userData, { width: 300, margin: 1 }, function (error) {
+        if (error) {
+          console.error(error);
+          mainMsg.style.color = '#e11';
+          mainMsg.textContent = 'QR generation failed.';
+          return;
+        }
         document.getElementById("qrcode").appendChild(canvas);
+
+        // add download button if not present
+        const existingDl = document.getElementById('dlBtn');
+        if (existingDl) existingDl.remove();
+
+        const dl = document.createElement('button');
+        dl.id = 'dlBtn';
+        dl.style.marginTop = '10px';
+        dl.textContent = 'Download QR PNG';
+        dl.onclick = () => {
+          const url = canvas.toDataURL('image/png');
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${name.replace(/\s+/g,'_') || 'qr'}-qr.png`;
+          a.click();
+        };
+        document.getElementById('qrcode').appendChild(dl);
+
+        mainMsg.style.color = '#0a7';
+        mainMsg.textContent = 'QR generated — you can download it and print/stick it on your item.';
       });
     });
   </script>
