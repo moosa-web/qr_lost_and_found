@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en-US">
+    <head><meta charset="utf-8">    
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Finder: Owner Profile</title>
+    </head>
+    <body>
+    <div id="content"></div>
+<script>
+  const params = new URLSearchParams(location.search);
+  const name = params.get('name') || 'Unknown';
+  const email = params.get('email') || '';
+  const phone = params.get('phone') || '';
+  const note = params.get('note') || '';
+  const content = document.getElementById('content');
+  content.innerHTML = `<h1>${name}</h1>
+    <p>${note.replace(/\\+/g,' ')}</p>
+    <p>Email: <a href="mailto:${email}">${email}</a></p>
+    <p>Phone: <a href="tel:${phone}">${phone}</a></p>
+    <p><small>If owner doesn't respond, please consider leaving the item at the nearest lost & found desk.</small></p>`;
+</script>
+</body></html>

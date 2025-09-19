@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Lost & Found — QR Generator (Prototype)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:Inter,Arial,Helvetica,sans-serif;background:#f3f7fb;margin:0;padding:24px;display:flex;flex-direction:column;align-items:center}
+    .card{background:#fff;padding:18px;border-radius:10px;box-shadow:0 6px 18px rgba(30,40,50,0.08);max-width:560px;width:100%}
+    h1{margin:0 0 12px;font-size:20px;color:#1f2937}
+    label{display:block;margin-top:8px;font-size:13px;color:#374151}
+    input, textarea{width:100%;padding:8px;margin-top:6px;border:1px solid #d1d5db;border-radius:6px;font-size:14px}
+    .row{display:flex;gap:10px}
+    button{margin-top:12px;padding:10px 14px;border-radius:8px;border:0;background:#2563eb;color:#fff;cursor:pointer;font-weight:600}
+    #qrcode{display:flex;flex-direction:column;align-items:center;margin-top:14px}
+    .actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+    a.small{font-size:13px;color:#2563eb;text-decoration:none}
+    pre{white-space:pre-wrap;background:#f8fafc;padding:10px;border-radius:6px;border:1px dashed #e2e8f0;margin-top:12px}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Lost & Found — QR Generator</h1>
+
+    <form id="userForm">
+      <label>Name (owner)</label>
+      <input id="name" type="text" placeholder="e.g. Phiwumusa Nxumalo" required />
+
+      <label>Email (owner)</label>
+      <input id="email" type="email" placeholder="owner@example.com" required />
+
+      <label>Phone (owner)</label>
+      <input id="phone" type="tel" placeholder="+886912345678" />
+
+      <label>Note (optional)</label>
+      <textarea id="note" placeholder="Item: backpack, reward if found..." rows="2"></textarea>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="submit">Generate QR</button>
+        <button id="generateVcardBtn" type="button">Generate vCard QR</button>
+      </div>
+    </form>
+
+    <div id="qrcode"></div>
+
+    <div class="actions" id="actionButtons"></div>
+
+    <pre id="rawOutput" style="display:none"></pre>
+  </div>
+
+  <!-- QR library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script>
+    // small helper to escape vCard lines
+    function escapeV(s){ return (s||'').replace(/\n/g,' ').replace(/\r/g,' ').replace(/;/g,','); }
+
+    const form = document.getElementById('userForm');
+    const qrcodeDiv = document.getElementById('qrcode');
+    const actionButtons = document.getElementById('actionButtons');
+    const rawOutput = document.getElementById('rawOutput');
+
+    function createVCard(name,email,phone,note){
+      return [
+        'BEGIN:VCARD',
+        'VERSION:3.0',
+        `FN:${escapeV(name)}`,
+        phone?`TEL:${phone}`:'',
+        email?`EMAIL:${email}`:'',
+        note?`NOTE:${escapeV(note)}`:'',
+        'END:VCARD'
+      ].filter(Boolean).join('\\n');
+    }
+
+    function createMailtoLink(email, name, note){
+      const subject = encodeURIComponent('Found your item');
+      const body = encodeURIComponent(`Hello ${name || ''},\\n\\nI found your item. ${note?('\\nNote: '+note+'\\n') : ''}\\nPlease reply to this email.\\n\\n-- finder`);
+      return `mailto:${email}?subject=${subject}&body=${body}`;
+    }
+
+    function showQRCode(data, filename='qr.png'){
+      qrcodeDiv.innerHTML = '';
+      actionButtons.innerHTML = '';
+      rawOutput.style.display = 'none';
+      const canvas = document.createElement('canvas');
+      QRCode.toCanvas(canvas, data, {width:300, margin:1}, function(err){
+        if(err) { console.error(err); alert('QR generation error'); return; }
+        qrcodeDiv.appendChild(canvas);
+
+        // download button
+        const dl = document.createElement('button');
+        dl.textContent = 'Download PNG';
+        dl.onclick = () => {
+          const url = canvas.toDataURL('image/png');
+          const a = document.createElement('a');
+          a.href = url; a.download = filename; a.click();
+        };
+
+        // copy raw data (for debugging / preview)
+        const showRaw = document.createElement('a');
+        showRaw.className = 'small';
+        showRaw.href = '#';
+        showRaw.textContent = 'Show raw data';
+        showRaw.onclick = (e) => { e.preventDefault(); rawOutput.textContent = data; rawOutput.style.display = rawOutput.style.display==='none'?'block':'none'; };
+
+        actionButtons.appendChild(dl);
+        actionButtons.appendChild(showRaw);
+      });
+    }
+
+    form.addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const phone = document.getElementById('phone').value.trim();
+      const note = document.getElementById('note').value.trim();
+
+      // default QR: contact with mailto + human friendly text (some scanners open vcard or show text)
+      const vcard = createVCard(name,email,phone,note);
+      const mailto = createMailtoLink(email,name,note);
+      // We'll embed vCard (preferred) and also show a web link fallback (mailto).
+      const combined = vcard + '\\n\\n' + 'If you found this item, contact owner: ' + email + ' or tap: ' + mailto;
+      showQRCode(combined, (name||'owner') + '-qr.png');
+    });
+
+    document.getElementById('generateVcardBtn').addEventListener('click', ()=>{
+      // explicit vCard-only option
+      const name = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const phone = document.getElementById('phone').value.trim();
+      const note = document.getElementById('note').value.trim();
+      const vcard = createVCard(name,email,phone,note);
+      showQRCode(vcard, (name||'owner') + '-vcard.png');
+    });
+  </script>
+</body>
+</html>
